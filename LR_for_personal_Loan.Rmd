@@ -1,0 +1,164 @@
+---
+title: "SA_2_IA"
+author: "Vaibhav Dixit"
+date: "3/26/2022"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+#1.Build a logistic regression equation to predict whether the person is likely to accept the bank’s offer for a personal loan. If necessary, create new variables to improve the model performance.
+
+#Loading the data into the database
+# From summary we can see that in Experience column we have some negative values converting them into positive values through abs
+
+library("readxl")
+setwd("D:/ISB_AMPBA/Term4/ASA/")
+my_data_lr <- read_excel("ASA_Assgnment1.xlsx")
+
+summary(my_data_lr)
+
+my_data_lr$Experience <- abs(my_data_lr$Experience)
+my_data_lr <- data.frame(my_data_lr)
+
+my_data_lr$Education <- factor(my_data_lr$Education, levels = c(1, 2, 3), labels = c("Undergrad", "Graduate", "Advanced/Professional"))
+
+
+#Plus dropping Zip code from the data 
+my_data_lr <- my_data_lr[-c(4)]
+```
+```{r}
+#Splitting the data into train and test
+train_size_lm <- floor(0.70 * nrow(my_data_lr))
+set.seed(213)
+train_ind_lr <- sample(seq_len(nrow(my_data_lr)),
+size = train_size_lm)
+train_lr <- my_data_lr[train_ind_lr,]
+test_lr <- my_data_lr[-train_ind_lr,]
+```
+```{r}
+## Running logistic regression model
+library(caret)
+lr.model=glm(Personal_Loan~.,data=train_lr,family=binomial(link ="logit"))
+#Printing out the logistic model
+summary(lr.model)
+
+
+## Plotting the ROC curve we can see that AUC is higher i,e 0.8774 that means model is discriminating well
+
+library(pROC)
+predic <-  predict(lr.model, newdata = train_lr, type = "response")
+predic <- as.numeric(predic > 0.5)
+roccurve <- roc(train_lr$Personal_Loan ~ predic)
+plot(roccurve)
+auc(roccurve)
+
+## From the model summary we can say that Income and  education are most significant followed by CCAvg, CD_account and family 
+
+#Moreover logit(Pi) = -24.2994741 + 0.2852874Age + (-0.2876571)Experience + 0.0757249Income + 0.6745967Family + 0.2413131CCAvg + 5.1437479EducationGraduate + 5.5021185EducationAdvanced/Professional + 0.0009644Mortgage + (-2.2273365)Securities.Account + 3.2802240CD.Account
+
+## We can also see that Redisual deviance is lesser than Null deviance which means variables that we are adding into the model are contributing to the probability of loan default
+
+```
+```{r}
+my_data_lr1 <- my_data_lr
+my_data_lr1$is_mortgage <- ifelse(my_data_lr1$Mortgage == 0,0,1)
+
+train_size11 <- floor(0.70 * nrow(my_data_lr1))
+set.seed(213)
+train_ind11 <- sample(seq_len(nrow(my_data_lr1)),
+                    size = train_size11)
+train11 <- my_data_lr1[train_ind11,]
+test11 <- my_data_lr1[-train_ind11,]
+
+library(caret)
+lr_1.model=glm(Personal_Loan~.,data=train11,family=binomial(link ="logit"))
+
+#Printing out the logistic model
+summary(lr_1.model)
+
+```
+```{r}
+# Carry out the omnibus test to test whether the model as a whole is significant
+
+# Here we consider the null hypothesis H0 = Data is bad fit to the model
+
+# After running the Omnibus LRT test  nothing but comparing the null and residual deviance in a more formal way.The low P-value suggests model1 and model2 are very different and hence we have enough evidence to reject the null hypothesis
+
+library(lmtest)
+lrtest(lr.model)
+```
+```{r}
+#Test the hypothesis that βj = 0 for all βj, where βj indicates the coefficient corresponding to jth explanatory variable. Comment on the result of thes hypothesis tests
+#Here the null hypothesis is Ho: Bj = 0
+#                            H1: Bj != 0
+# Here below using Wald' test we get Chi square test values which help to find if exploratory variables are significant
+# From below we can see that P values are very low hence we have enough evidence to reject the null hypothesis and  assume that variables are significant and can't be zero
+
+library(aods3)
+wald.test(b = coef(lr.model), varb = vcov(lr.model),Terms = 1:11 )
+
+```
+```{r}
+#Carry out the hypothesis test that the model fits the data. Comment on the results.
+# Here
+# Ho = the logistic regression model fits the data
+# Ha = the logistic regression model does not fits the data
+
+# Here we can see high P-value i.e strong evidence in favor of null hypothesis and data fits the model well
+# We also can say that model is discriminating the the loan predictions well
+library(ResourceSelection)
+hoslem.test(lr.model$y,fitted(lr.model))
+```
+```{r}
+#The bank would like to address the top 30 persons with an offer for personal loan based on the probability (propensity). Create a table displaying all the details of the “top” 30 persons who are most likely to accept the bank’s offer. Make sure to include the probability of accepting the offer along with all the other details.
+## Below is the list of top 30 persons to who are most likely to accept the bank offer
+
+logit.reg.pred <- predict(lr.model, my_data_lr[, -8], type = "response")
+glm.data <- cbind(my_data_lr,logit.reg.pred)
+
+glm.data <- glm.data[glm.data$Personal_Loan == 1,]
+
+top30_lm <- head(glm.data[order(-glm.data$logit.reg.pred),],30)
+top30_lm
+```
+```{r}
+
+# Compare the above list of 30 persons against the 30 persons obtained from Discriminant Analysis (Assignment 1) #Comment on the similarities and dissimilarities
+
+summary(top30_lm)
+print(" ")
+
+top30_lda <- read.csv("D:/ISB_AMPBA/Term4/ASA/top30_lda.csv") 
+summary(top30_lda)
+
+# On comparing the summary of top 30 output from LDA and LD model we can see the similarities are 
+# Mean Age is almost same in both LDA and LR model
+# Mean CCAvg is almost same in both the cases 
+print(" ")
+
+#Dissimilarities are
+# Mean probability in-case of ldm is 0.9929 whereas in case of lda is 0.9496
+# In LDA output mean of Income is lower than that of LM 
+# whereas securities.account mean of LDA is greater than that of LM 
+# Also, mean of Credit card is higher in LDA than that of LM
+# In Mortgage Mean of LM is higher than that of of LDA
+
+# From the above data we can assume that in
+
+#LM model mean probability is higher than LDA whereas LM model is giving higher emphasis on Income and Mortgage for loan prediction
+#LDA model higher emphasis is given on securities.account, CD.account and  Credit Card for loan prediction
+
+print("Boxplot for AGE in LM model")
+boxplot(top30_lm$Age)
+print("Boxplot for AGE in LDA model")
+boxplot(top30_lda$Age)
+
+
+print("Boxplot for Income in LM model")
+boxplot(top30_lm$Income)
+print("Boxplot for Income in LDA model")
+boxplot(top30_lda$Income)
+
+```
